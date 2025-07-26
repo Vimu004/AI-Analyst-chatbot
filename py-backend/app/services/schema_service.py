@@ -17,7 +17,6 @@ def generate_intelligent_schema(file_paths: list[str], dataset_id: str):
         try:
             df = pd.read_json(file_path, lines=True, nrows=10)
             
-            # **DEFINITIVE FIX**: Convert datetime columns to strings using .astype(str), which is robust.
             for col in df.select_dtypes(include=['datetime64[ns, UTC]', 'datetime64[ns]']).columns:
                 df[col] = df[col].astype(str)
 
@@ -34,7 +33,6 @@ def generate_intelligent_schema(file_paths: list[str], dataset_id: str):
         print("Could not generate any raw schemas from the provided files.")
         return
 
-    # --- Step 1: AI-Powered Column Cleaning ---
     map_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     map_prompt = ChatPromptTemplate.from_template(
         """
@@ -57,7 +55,6 @@ def generate_intelligent_schema(file_paths: list[str], dataset_id: str):
         print(f"Failed to generate and save column map: {e}")
         return
 
-    # --- Step 2: AI-Powered Semantic Analysis ---
     context_llm = ChatOpenAI(model="gpt-4o", temperature=0)
     context_prompt = ChatPromptTemplate.from_template(
         """
