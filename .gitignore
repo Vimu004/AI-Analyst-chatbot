@@ -1,0 +1,36 @@
+# Python backend ignores
+py-backend/__pycache__/
+py-backend/app/__pycache__/
+py-backend/app/services/__pycache__/
+py-backend/*.pyc
+py-backend/venv/
+py-backend/.env
+py-backend/instance/
+py-backend/uploads/
+py-backend/visualizations/
+py-backend/temp_chart_gen_*/
+
+# Frontend ignores
+frontend/node_modules/
+frontend/dist/
+frontend/.bun.lockb # If using Bun
+
+# General ignores
+.DS_Store
+.vscode/ # VS Code specific settings (optional, but often ignored)
+npm-debug.log
+yarn-error.log
+*.log
+
+# Editor specific files
+.idea/ # IntelliJ IDEA
+.history/ # VS Code extension (e.g., Local History)
+
+# OS generated files
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Other temporary files
+*.tmp
+*.bak
