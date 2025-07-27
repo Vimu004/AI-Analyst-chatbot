@@ -19,7 +19,7 @@ class AgentState(TypedDict):
     generated_code: Optional[str] = None
     analysis_result: Optional[Dict[str, Any]] = None
     visualization_output: Optional[Dict[str, str]] = None
-    intent: Optional[str] = None # Added for intent routing
+    intent: Optional[str] = None 
 
 @tool
 def python_pandas_tool(dataset_id: str, code: str) -> Dict[str, Any]:
@@ -235,23 +235,19 @@ def visualization_node(state: AgentState) -> Dict[str, Any]:
     })
     return {"visualization_output": result}
 
-# --- 4. Build and Compile Graph ---
 workflow = StateGraph(AgentState)
 
-# Add all nodes
-workflow.add_node("intent_router", intent_router_node) # NEW
-workflow.add_node("general_response", general_response_node) # NEW
+workflow.add_node("intent_router", intent_router_node) 
+workflow.add_node("general_response", general_response_node) 
 workflow.add_node("code_generator", code_generator_node)
 workflow.add_node("code_executor", code_executor_node)
 workflow.add_node("visualizer", visualization_node)
 
-# Define the entry point
-workflow.set_entry_point("intent_router") # NEW entry point
+workflow.set_entry_point("intent_router") 
 
-# Define conditional edges from the intent_router
+
 workflow.add_conditional_edges(
     "intent_router",
-    # This is the function that decides the next node based on state['intent']
     lambda state: state['intent'], 
     {
         "GENERAL_CONVERSATION": "general_response",
@@ -259,23 +255,23 @@ workflow.add_conditional_edges(
     }
 )
 
-# Existing edges for data analysis flow
+
 workflow.add_edge("code_generator", "code_executor")
 workflow.add_edge("code_executor", "visualizer")
 
-# End points for both paths
-workflow.add_edge("general_response", END) # NEW: End for general responses
+
+workflow.add_edge("general_response", END) 
 workflow.add_edge("visualizer", END)
 
 app_graph = workflow.compile()
 
-# --- 5. Main Agent Runner Function ---
+
 def run_agent(dataset_id: str, query: str, schema_context: str) -> Dict[str, Any]:
     initial_state = {
         "dataset_id": dataset_id,
         "query": query,
         "schema_context": schema_context,
-        "intent": None # Initialize intent as None
+        "intent": None 
     }
     
     final_state = app_graph.invoke(initial_state)
@@ -283,9 +279,9 @@ def run_agent(dataset_id: str, query: str, schema_context: str) -> Dict[str, Any
     analysis_result = final_state.get('analysis_result', {})
     visualization_output = final_state.get('visualization_output', {"html_snippet": "", "url": ""})
     
-    # Determine which type of response to build based on the intent
+    
     if final_state.get('intent') == "GENERAL_CONVERSATION":
-        # For general conversations, we only care about the summary
+
         result = {
             "summary": analysis_result.get('summary_text', "Sorry, I couldn't process that general query."),
             "table": [],
@@ -293,7 +289,7 @@ def run_agent(dataset_id: str, query: str, schema_context: str) -> Dict[str, Any
             "visualizationUrl": ""
         }
     elif "error" in analysis_result:
-        # Handle errors from data analysis
+
         result = {
             "summary": f"An error occurred during analysis: {analysis_result['error']}",
             "table": [],
@@ -301,7 +297,7 @@ def run_agent(dataset_id: str, query: str, schema_context: str) -> Dict[str, Any
             "visualizationUrl": ""
         }
     else:
-        # Standard data analysis response
+
         result = {
             "summary": analysis_result.get('summary_text', "Analysis complete."),
             "table": analysis_result.get('table', []),
