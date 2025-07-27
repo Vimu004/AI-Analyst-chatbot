@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { User, Sparkles, ExternalLink, Download } from 'lucide-react'; // 1. Import Download icon
+import { User, Sparkles, ExternalLink, Download } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -33,7 +33,6 @@ export const ChatMessage = ({ message }: ChatMessageProps) => {
     }
   };
   
-  // 2. Add a function to handle CSV download
   const handleDownloadCsv = () => {
     if (!message.table || message.table.length === 0) return;
 
@@ -81,11 +80,15 @@ export const ChatMessage = ({ message }: ChatMessageProps) => {
       )}
 
       <div className={`max-w-[85%] space-y-4 ${isUser ? 'order-first' : ''}`}>
-        <Card className={`${
-          isUser 
-            ? 'bg-primary text-primary-foreground shadow-md' 
-            : 'bg-card border-border/50 shadow-sm'
-        } transition-all duration-200`}>
+        <Card 
+          className={`${
+            isUser 
+              ? 'bg-primary text-primary-foreground shadow-md' 
+              : 'bg-card border-border/50 shadow-sm'
+          } transition-all duration-200 
+          ${!isUser ? 'w-[700px]' : ''} 
+          `}
+        >
           {isUser ? (
             <div className="p-4">
               <p className="whitespace-pre-wrap leading-relaxed font-medium">{message.content}</p>
@@ -104,7 +107,6 @@ export const ChatMessage = ({ message }: ChatMessageProps) => {
               {/* Data Table */}
               {message.table && message.table.length > 0 && (
                 <div className="space-y-3">
-                  {/* 3. Update the header to include the button */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="w-1 h-4 bg-primary rounded-full"></div>
@@ -116,6 +118,7 @@ export const ChatMessage = ({ message }: ChatMessageProps) => {
                     </Button>
                   </div>
                   
+                  {/* The table container still has max-height for internal scrolling */}
                   <div className="rounded-xl border border-border overflow-auto max-h-80 bg-background/50">
                     <Table>
                       <TableHeader>
@@ -158,6 +161,7 @@ export const ChatMessage = ({ message }: ChatMessageProps) => {
                       </Button>
                     )}
                   </div>
+                  {/* The visualization container still has a specific styling */}
                   <div 
                     ref={vizRef}
                     className="rounded-xl border border-border overflow-hidden bg-background/50 p-4"

@@ -1,4 +1,3 @@
-# /app/services/agent_service.py
 import os
 import re
 import uuid
@@ -13,7 +12,6 @@ from langchain.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 from langchain_core.output_parsers import StrOutputParser
 
-# --- 1. Agent State Definition ---
 class AgentState(TypedDict):
     dataset_id: str
     query: str
@@ -21,8 +19,8 @@ class AgentState(TypedDict):
     generated_code: Optional[str] = None
     analysis_result: Optional[Dict[str, Any]] = None
     visualization_output: Optional[Dict[str, str]] = None
+    intent: Optional[str] = None # Added for intent routing
 
-# --- 2. Tools ---
 @tool
 def python_pandas_tool(dataset_id: str, code: str) -> Dict[str, Any]:
     """
@@ -56,9 +54,6 @@ def python_pandas_tool(dataset_id: str, code: str) -> Dict[str, Any]:
         analyze_data_func = local_namespace['analyze_data']
         result = analyze_data_func(dataframes)
         
-        # **DEFINITIVE FIX for Timestamps**:
-        # After the AI code runs, manually iterate through the results to find
-        # and convert any non-serializable Pandas Timestamp objects to strings.
         if 'table' in result and isinstance(result['table'], list):
             table_data = result['table']
             for row in table_data:
@@ -129,7 +124,62 @@ def visualization_tool(dataset_id: str, analysis_result: Dict[str, Any], query: 
     viz_url = f"/visualizations/{viz_filename}"
     return {"html_snippet": html_snippet, "url": viz_url}
 
-# --- 3. Graph Nodes ---
+# --- New Nodes for Intent Routing and General Response ---
+def intent_router_node(state: AgentState) -> Dict[str, Any]:
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0) 
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """
+        You are an AI assistant. Your task is to classify the user's intent based on their query.
+
+        If the query is a general greeting, thanks, question about capabilities, or any non-data-specific conversation, output 'GENERAL_CONVERSATION'.
+        If the query is clearly asking for data analysis, calculations, or visualizations related to a dataset, output 'DATA_ANALYSIS_REQUEST'.
+
+        Output ONLY the classification string. Do not add any other text or punctuation.
+        """),
+        ("human", "User Query: {query}")
+    ])
+    chain = prompt | llm | StrOutputParser()
+    
+    try:
+        intent = chain.invoke({"query": state['query']}).strip().upper()
+        if intent not in ['GENERAL_CONVERSATION', 'DATA_ANALYSIS_REQUEST']:
+            intent = 'DATA_ANALYSIS_REQUEST' # Default to data analysis if classification is unclear/bad
+    except Exception as e:
+        print(f"Intent classification failed: {e}. Defaulting to DATA_ANALYSIS_REQUEST.")
+        intent = 'DATA_ANALYSIS_REQUEST' # Fallback if LLM call fails
+        
+    print(f"User Query: '{state['query']}' -> Intent: '{intent}'")
+    return {"intent": intent}
+
+def general_response_node(state: AgentState) -> Dict[str, Any]:
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """
+        You are an AI assistant designed to help users analyze datasets and create visualizations.
+        However, this user query is a general conversation (like a greeting, thank you, or question about your capabilities), not a data analysis request.
+        Respond politely and informatively, keeping in mind your core purpose.
+        If asked about who developed you, state that you were developed by Vimuthu Thesara.
+        Example responses:
+        - "Hello there! How can I assist you with data analysis today?"
+        - "I'm here to help you analyze your datasets and generate insightful visualizations. What would you like to explore?"
+        - "You're welcome! Let me know if you have any datasets you'd like me to analyze."
+        - "I am an AI assistant developed by Vimuthu Thesara."
+        """),
+        ("human", "User Query: {query}")
+    ])
+    chain = prompt | llm | StrOutputParser()
+    
+    response_text = chain.invoke({"query": state['query']})
+    
+    return {
+        "analysis_result": {
+            "summary_text": response_text,
+            "table": [],
+            "error": None 
+        }
+    }
+
+# --- Existing Graph Nodes ---
 def code_generator_node(state: AgentState) -> Dict[str, str]:
     """Generates the Python analysis code."""
     llm = ChatOpenAI(model="gpt-4o", temperature=0)
@@ -145,6 +195,9 @@ def code_generator_node(state: AgentState) -> Dict[str, str]:
         5.  **Return Value:** The function MUST return a dictionary with two keys:
             - `table`: The final data as a list of dictionaries (e.g., `df.to_dict('records')`).
             - `summary_text`: A detailed, data-driven explanation of your findings in natural language.
+
+        **IMPORTANT HOUR FORMATTING:**
+        If the analysis involves the 'hour' column (typically an integer from 0-23) and it's part of the final `table` output or `summary_text`, ensure these hour values are formatted as "HH:00" (e.g., 0 becomes "00:00", 1 becomes "01:00", ..., 23 becomes "23:00"). For example, apply `df['hour'] = df['hour'].apply(lambda x: f"{{x:02d}}:00")` to the DataFrame column *before* converting to dictionary records or using it in summary text.
 
         **Schema Context:**
         {schema_context}
@@ -184,13 +237,34 @@ def visualization_node(state: AgentState) -> Dict[str, Any]:
 
 # --- 4. Build and Compile Graph ---
 workflow = StateGraph(AgentState)
+
+# Add all nodes
+workflow.add_node("intent_router", intent_router_node) # NEW
+workflow.add_node("general_response", general_response_node) # NEW
 workflow.add_node("code_generator", code_generator_node)
 workflow.add_node("code_executor", code_executor_node)
 workflow.add_node("visualizer", visualization_node)
 
-workflow.set_entry_point("code_generator")
+# Define the entry point
+workflow.set_entry_point("intent_router") # NEW entry point
+
+# Define conditional edges from the intent_router
+workflow.add_conditional_edges(
+    "intent_router",
+    # This is the function that decides the next node based on state['intent']
+    lambda state: state['intent'], 
+    {
+        "GENERAL_CONVERSATION": "general_response",
+        "DATA_ANALYSIS_REQUEST": "code_generator",
+    }
+)
+
+# Existing edges for data analysis flow
 workflow.add_edge("code_generator", "code_executor")
 workflow.add_edge("code_executor", "visualizer")
+
+# End points for both paths
+workflow.add_edge("general_response", END) # NEW: End for general responses
 workflow.add_edge("visualizer", END)
 
 app_graph = workflow.compile()
@@ -201,26 +275,39 @@ def run_agent(dataset_id: str, query: str, schema_context: str) -> Dict[str, Any
         "dataset_id": dataset_id,
         "query": query,
         "schema_context": schema_context,
+        "intent": None # Initialize intent as None
     }
     
     final_state = app_graph.invoke(initial_state)
 
     analysis_result = final_state.get('analysis_result', {})
-    if "error" in analysis_result:
-        return {
+    visualization_output = final_state.get('visualization_output', {"html_snippet": "", "url": ""})
+    
+    # Determine which type of response to build based on the intent
+    if final_state.get('intent') == "GENERAL_CONVERSATION":
+        # For general conversations, we only care about the summary
+        result = {
+            "summary": analysis_result.get('summary_text', "Sorry, I couldn't process that general query."),
+            "table": [],
+            "visualizationHtml": "",
+            "visualizationUrl": ""
+        }
+    elif "error" in analysis_result:
+        # Handle errors from data analysis
+        result = {
             "summary": f"An error occurred during analysis: {analysis_result['error']}",
             "table": [],
             "visualizationHtml": "",
             "visualizationUrl": ""
         }
-
-    visualization_output = final_state.get('visualization_output', {"html_snippet": "", "url": ""})
-    result = {
-        "summary": analysis_result.get('summary_text', "Analysis complete."),
-        "table": analysis_result.get('table', []),
-        "visualizationHtml": visualization_output.get('html_snippet', ''),
-        "visualizationUrl": visualization_output.get('url', '')
-    }
+    else:
+        # Standard data analysis response
+        result = {
+            "summary": analysis_result.get('summary_text', "Analysis complete."),
+            "table": analysis_result.get('table', []),
+            "visualizationHtml": visualization_output.get('html_snippet', ''),
+            "visualizationUrl": visualization_output.get('url', '')
+        }
 
     print("\n" + "="*50)
     print("FINAL JSON RESPONSE TO FRONTEND:")
