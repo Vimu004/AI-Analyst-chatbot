@@ -1,4 +1,3 @@
-# /app/services/schema_service.py
 import pandas as pd
 import os
 import json
